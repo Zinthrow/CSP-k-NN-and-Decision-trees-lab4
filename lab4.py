@@ -16,22 +16,19 @@ def forward_checking(state, verbose=False):
         return False
     # forward checking logic
     X = state.get_current_variable()
-    if X is not None:
-        x = X.get_assigned_value() 
-        constraints = state.get_constraints_by_name(X.get_name())
-        print (constraints)
-        for constraint in constraints:
-            print ('called')
-            Y = state.get_variable_by_name(constraint)
-            for y in Y.get_domain():
-                if BinaryConstraint.check(state,value_i=x,value_j=y) is False:
-                    Y.reduce_domain(y)
-                    print ('called other')
+    if not X: return True
+    x = X.get_assigned_value() 
+    constraints = state.get_constraints_by_name(X.get_name())
+    for con in constraints:
+        Y = state.get_variable_by_name(con.get_variable_i_name() if con.get_variable_i_name() != X.get_name() else con.get_variable_j_name())
+        for y in Y.get_domain():
+            if con.check(state, x, y) is False:
+                Y.reduce_domain(y)
                 if Y.domain_size() is 0:
-                    print ('domain size called')
                     return False
-                print ('does this run at all?')
-        return True
+            
+  
+    return True
 
 # Now Implement forward checking + (constraint) propagation through
 # singleton domains.
@@ -43,33 +40,23 @@ def forward_checking_prop_singleton(state, verbose=False):
 
     # Add your propagate singleton logic here.
     domains = state.get_all_variables()
-    Q = queue.Queue()
-    for variable in domains:
-        if variable.get_domain() == 1:
-            Q.put(variable)
-    visited = queue.Queue()
-    while Q.empty() is not True:
-        X = Q.get()
-        x = X.get_assigned_value()
-        visited.put(X)
-        for constraint in state.get_constraints_by_name(X.get_name()):
-            Y = state.get_constraints_by_name(constraint)
+    singletons = [x for x in domains if x.domain_size == 1]
+    for X in singletons:
+        x = X.domain[0]
+        for con in state.get_constraints_by_name(X.get_name()):
+            Y = state.get_variable_by_name(con.get_variable_i_name() if con.get_variable_i_name() != X.get_name() else con.get_variable_j_name())
             for y in Y.get_domain():
-                if BinaryConstraint.check(state,value_i=x,value_j=y) is False:
+                if con.check(state, x, y) is False:
                     Y.reduce_domain(y)
-                if Y.get_domain(): 
-                    return False
-        domains = state.get_all_variables()
-        for variable in domains:
-            if variable.get_domain() == 1:
-                Q.put(variable)
+                    if len(Y.get_domain()) is 0: 
+                        return False
     return True
         
 
 ## The code here are for the tester
 ## Do not change.
-from moose_csp import moose_csp_problem
-from map_coloring_csp import map_coloring_csp_problem
+#from moose_csp import moose_csp_problem
+#from map_coloring_csp import map_coloring_csp_problem
 
 def csp_solver_tree(problem, checker):
     problem_func = globals()[problem]
@@ -105,8 +92,15 @@ senate_group1, senate_group2 = crosscheck_groups(senate_people)
 ## computes Hamming distances.
 
 def euclidean_distance(list1, list2):
+    assert isinstance(list1, list)
+    assert isinstance(list2, list)
     # this is not the right solution!
-    return hamming_distance(list1, list2)
+    dist = 0
+    for item1, item2 in zip(list1, list2):
+        if item1 != item2:
+            dist += abs((item1-item2)^2)
+
+    return math.sqrt(dist)
 
 #Once you have implemented euclidean_distance, you can check the results:
 #evaluate(nearest_neighbors(euclidean_distance, 1), senate_group1, senate_group2)
@@ -115,7 +109,7 @@ def euclidean_distance(list1, list2):
 ## deals better with independents. Make a classifier that makes at most 3
 ## errors on the Senate.
 
-my_classifier = nearest_neighbors(hamming_distance, 1)
+my_classifier = nearest_neighbors(euclidean_distance, 5)
 #evaluate(my_classifier, senate_group1, senate_group2, verbose=1)
 
 ### Part 2: ID Trees
@@ -125,9 +119,44 @@ my_classifier = nearest_neighbors(hamming_distance, 1)
 ## which should lead to simpler trees.
 
 def information_disorder(yes, no):
-    return homogeneous_disorder(yes, no)
+    yestotal = len(yes) + 1
+    nototal = len(no) + 1
+    republicanyes = 1
+    republicanno = 1
+    democratyes = 1
+    democratno = 1
+    independentyes = 1
+    independentno = 1
+    for y in yes:
+        if y == "Republican":
+            republicanyes += 1
+        elif y == "Democrat":
+            democratyes += 1
+        elif y == "Independent":
+            independentyes += 1
+            
+    for n in no:
+        if n == "Republican":
+            republicanno += 1
+        elif n == "Democrat":
+            democratno += 1
+        elif n == "Independent":
+            independentno += 1
+            
+    repubyesfrac = republicanyes/yestotal
+    repubnofrac = republicanno/nototal
+    demoyesfrac = democratyes/yestotal
+    demonofrac = democratno/nototal
+    indeyesfrac = independentyes/yestotal
+    indenofrac = independentno/nototal
+    yesdisorder = -math.log(repubyesfrac,2)*repubyesfrac-math.log(demoyesfrac,2)*demoyesfrac-math.log(indeyesfrac,2)*indeyesfrac
+    nodisorder = -math.log(repubnofrac,2)*repubnofrac-math.log(demonofrac,2)*demonofrac-math.log(indenofrac,2)*indenofrac      
+    disorder = yesdisorder + nodisorder
+    
+    return disorder
+    
 
-#print CongressIDTree(senate_people, senate_votes, information_disorder)
+print CongressIDTree(senate_people, senate_votes, information_disorder)
 #evaluate(idtree_maker(senate_votes, homogeneous_disorder), senate_group1, senate_group2)
 
 ## Now try it on the House of Representatives. However, do it over a data set
